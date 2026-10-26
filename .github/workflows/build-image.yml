@@ -1,0 +1,93 @@
+name: build-image
+
+# 把 M1 产出的 host .deb 打成 Cuttlefish 容器镜像，推 GHCR。
+# 盒子只做 docker pull + docker run，不装 host 包、不动宿主机系统。
+# 上游机制：container/image/image-builder.sh -m dev（吃仓库根目录的 cuttlefish-*.deb）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      deb_run_id:
+        description: "build-host-packages 的 run id（留空=最近一次成功运行）"
+        required: false
+        type: string
+  workflow_run:
+    workflows: ["build-host-packages"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  packages: write
+
+jobs:
+  image:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load pinned versions
+        run: |
+          set -a; . ./versions.env; set +a
+          echo "ANDROID_CUTTLEFISH_REF=$ANDROID_CUTTLEFISH_REF" >> "$GITHUB_ENV"
+
+      - name: Resolve deb artifact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rid="${{ inputs.deb_run_id }}"
+          if [ -z "$rid" ] && [ "${{ github.event_name }}" = "workflow_run" ]; then
+            rid="${{ github.event.workflow_run.id }}"
+          fi
+          if [ -z "$rid" ]; then
+            rid="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build-host-packages.yml \
+              --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          fi
+          echo "DEB_RUN_ID=$rid" >> "$GITHUB_ENV"
+          echo "using build-host-packages run: $rid"
+
+      - name: Download deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cuttlefish-host-packages-arm64
+          run-id: ${{ env.DEB_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: debs
+
+      - name: Checkout google/android-cuttlefish
+        run: |
+          git clone https://github.com/google/android-cuttlefish.git upstream
+          git -C upstream checkout "$ANDROID_CUTTLEFISH_REF"
+
+      - name: Apply RK3588 patches
+        run: |
+          for p in patches/*.patch; do
+            [ -e "$p" ] || continue
+            git -C upstream apply "$GITHUB_WORKSPACE/$p"
+          done
+
+      - name: Stage debs at upstream root
+        run: |
+          ls -la debs/
+          cp debs/cuttlefish-*.deb upstream/
+          ls -la upstream/cuttlefish-*.deb
+
+      - name: Build container image (upstream image-builder, dev mode)
+        working-directory: upstream
+        run: |
+          container/image/image-builder.sh -m dev -c docker -t cuttlefish-orchestration:rk3588
+
+      - name: Push to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          img="ghcr.io/${{ github.repository_owner }}/cuttlefish-orchestration"
+          docker tag cuttlefish-orchestration:rk3588 "$img:rk3588"
+          docker tag cuttlefish-orchestration:rk3588 "$img:rk3588-${GITHUB_SHA::7}"
+          docker push "$img:rk3588"
+          docker push "$img:rk3588-${GITHUB_SHA::7}"
+          docker image inspect "$img:rk3588" --format '{{index .RepoDigests 0}}'
