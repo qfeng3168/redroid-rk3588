@@ -11,6 +11,7 @@ on:
       - ".github/workflows/build-host-packages.yml"
       - "versions.env"
       - "patches/**"
+      - "scripts/**"
 
 jobs:
   build:
@@ -22,6 +23,7 @@ jobs:
         run: |
           set -a; . ./versions.env; set +a
           echo "ANDROID_CUTTLEFISH_REF=$ANDROID_CUTTLEFISH_REF" >> "$GITHUB_ENV"
+          echo "BAZELISK_VERSION=$BAZELISK_VERSION" >> "$GITHUB_ENV"
 
       - name: Checkout google/android-cuttlefish
         run: |
@@ -35,10 +37,21 @@ jobs:
             git -C upstream apply "$GITHUB_WORKSPACE/$p"
           done
 
+      - name: Install bazelisk (upstream Build-Depends, absent from Ubuntu arm64 archive)
+        run: |
+          set -euo pipefail
+          cd /tmp
+          base="https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}"
+          curl -fsSLO "$base/bazelisk-arm64.deb"
+          curl -fsSLO "$base/bazelisk-arm64.deb.sha256"
+          echo "$(awk '{print $1}' bazelisk-arm64.deb.sha256)  bazelisk-arm64.deb" | sha256sum -c -
+          sudo dpkg -i bazelisk-arm64.deb
+          command -v bazelisk
+
       - name: Build Debian packages
         working-directory: upstream
         run: |
-          # 上游脚本在容器内构建 .deb（需要 Docker）
+          # 上游脚本在本机构建 .deb（mk-build-deps + dpkg-buildpackage）
           tools/buildutils/build_packages.sh
 
       - name: Collect artifacts

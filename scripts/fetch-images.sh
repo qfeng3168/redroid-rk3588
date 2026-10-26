@@ -15,7 +15,7 @@ resolve() { # $1=raw url -> signed url
 }
 
 chunkget() { # $1=raw url  $2=out  $3=min bytes  $4=file-type pattern
-  local raw=$1 out=$2 min=$3 pat=$4 parts=12 signed total chunk i s e t
+  local raw=$1 out=$2 min=$3 pat=$4 parts=12 signed total chunk i j s e
   for attempt in 1 2 3 4 5 6; do
     signed=$(resolve "$raw")
     [ -n "$signed" ] && break
@@ -29,11 +29,21 @@ chunkget() { # $1=raw url  $2=out  $3=min bytes  $4=file-type pattern
   rm -f "$out".p*
   for i in $(seq 0 $((parts-1))); do
     s=$(( i * chunk )); e=$(( (i+1) * chunk - 1 ))
-    if [ $e -ge $total ]; then e=$(( total - 1 )); fi
-    ( for t in 1 2 3 4 5; do curl -s --fail -r $s-$e -o "$out.p$i" "$signed" && break; sleep 20; done ) &
+    if [ "$e" -ge "$total" ]; then e=$(( total - 1 )); fi
+    (
+      n=0
+      while [ "$n" -lt 5 ]; do
+        n=$(( n + 1 ))
+        if curl -s --fail -r "$s-$e" -o "$out.p$i" "$signed"; then break; fi
+        sleep 20
+      done
+    ) &
   done
   wait
-  cat $(ls "$out".p* | sort -t p -k2 -n) > "$out"
+  : > "$out"
+  for j in $(seq 0 $((parts-1))); do
+    cat "$out.p$j" >> "$out"
+  done
   rm -f "$out".p*
   local sz
   sz=$(stat -c%s "$out")
