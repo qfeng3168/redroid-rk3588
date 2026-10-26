@@ -48,6 +48,9 @@ jobs:
           sudo dpkg -i bazelisk-arm64.deb
           command -v bazelisk
 
+      - name: Refresh apt index (runner image lists are stale; pinned versions 404)
+        run: sudo apt-get update
+
       - name: Build Debian packages
         working-directory: upstream
         run: |
