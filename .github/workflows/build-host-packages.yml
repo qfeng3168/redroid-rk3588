@@ -1,0 +1,64 @@
+name: build-host-packages
+
+# 构建 RK3588 用 Cuttlefish host 包（cuttlefish-base / cuttlefish-user .deb）
+# 基线：google/android-cuttlefish 源码，ref 由 versions.env 钉死。
+# 注意：这是骨架 v1，首次在真实仓库跑通前，构建步骤细节可能需按上游脚本实际行为微调。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-host-packages.yml"
+      - "versions.env"
+      - "patches/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load pinned versions
+        run: |
+          set -a; . ./versions.env; set +a
+          echo "ANDROID_CUTTLEFISH_REF=$ANDROID_CUTTLEFISH_REF" >> "$GITHUB_ENV"
+
+      - name: Checkout google/android-cuttlefish
+        run: |
+          git clone https://github.com/google/android-cuttlefish.git upstream
+          git -C upstream checkout "$ANDROID_CUTTLEFISH_REF"
+
+      - name: Apply RK3588 patches
+        run: |
+          for p in patches/*.patch; do
+            [ -e "$p" ] || continue
+            git -C upstream apply "$GITHUB_WORKSPACE/$p"
+          done
+
+      - name: Build Debian packages
+        working-directory: upstream
+        run: |
+          # 上游脚本在容器内构建 .deb（需要 Docker）
+          tools/buildutils/build_packages.sh
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          find upstream -name "cuttlefish-*.deb" -exec cp {} dist/ \;
+          ls -la dist/
+          sha256sum dist/*.deb > dist/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cuttlefish-host-packages-arm64
+          path: dist/
+          if-no-files-found: error
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shellcheck scripts
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck scripts/*.sh
