@@ -1,0 +1,59 @@
+name: fetch-guest-images
+
+# 把钉死的官方 guest 镜像（ci.android.com）下载后打成 GHCR 镜像，
+# 盒子经 1ms 镜像 docker pull 获取，避免盒子直连 GCS 的慢速链路。
+# 产物：ghcr.io/<owner>/cuttlefish-guest-images:<CF_IMAGE_BUILD_ID>
+#   /images/aosp_cf_arm64_only_phone-img-<id>.zip
+#   /images/cvd-host_package.tar.gz
+#   /images/SHA256SUMS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load pinned versions
+        run: |
+          set -a; . ./versions.env; set +a
+          echo "CF_IMAGE_BUILD_ID=$CF_IMAGE_BUILD_ID" >> "$GITHUB_ENV"
+          echo "CF_IMAGE_TARGET=$CF_IMAGE_TARGET" >> "$GITHUB_ENV"
+
+      - name: Download official artifacts (ci.android.com /raw/, retry on 429)
+        run: |
+          set -euo pipefail
+          mkdir -p images
+          base="https://ci.android.com/builds/submitted/${CF_IMAGE_BUILD_ID}/${CF_IMAGE_TARGET}/latest/raw"
+          dl() {
+            url="$1"; out="$2"
+            for i in 1 2 3 4 5 6 7 8; do
+              if curl -fL --retry 3 -o "$out" "$url"; then return 0; fi
+              echo "attempt $i failed for $url, wait 45s"; sleep 45
+            done
+            return 1
+          }
+          dl "$base/cvd-host_package.tar.gz" images/cvd-host_package.tar.gz
+          dl "$base/aosp_cf_arm64_only_phone-img-${CF_IMAGE_BUILD_ID}.zip" \
+             "images/aosp_cf_arm64_only_phone-img-${CF_IMAGE_BUILD_ID}.zip"
+          ls -la images/
+          file images/*
+          (cd images && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+
+      - name: Package as GHCR image and push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf 'FROM scratch\nCOPY images/ /images/\n' > Dockerfile.guest
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          img="ghcr.io/${{ github.repository_owner }}/cuttlefish-guest-images"
+          docker build -f Dockerfile.guest -t "$img:${CF_IMAGE_BUILD_ID}" .
+          docker push "$img:${CF_IMAGE_BUILD_ID}"
+          docker image inspect "$img:${CF_IMAGE_BUILD_ID}" --format '{{index .RepoDigests 0}}'
