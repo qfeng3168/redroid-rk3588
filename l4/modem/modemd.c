@@ -164,13 +164,26 @@ static int ef_msisdn_record(unsigned char* out) {
 // ---- AT channel ----------------------------------------------------------
 static int g_fd = -1;
 
-static void send_raw(const char* s) {
-    size_t len = strlen(s), off = 0;
-    while (off < len) {
-        ssize_t w = write(g_fd, s + off, len - off);
-        if (w <= 0) return;
+static char g_obuf[8192];
+static size_t g_olen;
+static int g_suppress_final;  // mid-compound: hold back this command's OK
+static int g_aborted;         // an ERROR ended a compound chain
+
+static void send_raw(const char* s) {  // queue response bytes
+    size_t len = strlen(s);
+    if (g_olen + len >= sizeof g_obuf) return;
+    memcpy(g_obuf + g_olen, s, len);
+    g_olen += len;
+}
+
+static void resp_flush(void) {
+    size_t off = 0;
+    while (off < g_olen) {
+        ssize_t w = write(g_fd, g_obuf + off, g_olen - off);
+        if (w <= 0) break;
         off += (size_t)w;
     }
+    g_olen = 0;
 }
 
 static void sendf(const char* fmt, ...) {
@@ -182,8 +195,13 @@ static void sendf(const char* fmt, ...) {
     send_raw(buf);
 }
 
-static void ok(void) { send_raw("\r\nOK\r\n"); }
-static void err(void) { send_raw("\r\nERROR\r\n"); }
+static void ok(void) {
+    if (!g_suppress_final) send_raw("\r\nOK\r\n");
+}
+static void err(void) {
+    send_raw("\r\nERROR\r\n");
+    g_aborted = 1;
+}
 
 static void hex_encode(const unsigned char* in, int n, char* out) {
     static const char* H = "0123456789ABCDEF";
@@ -266,18 +284,7 @@ static void handle_crsm(const char* args) {
     }
 }
 
-static void handle_command(char* cmd) {
-    // reference-ril sends commands like "AT+CGSN" (already stripped of \r)
-    while (*cmd == ' ' || *cmd == '\t') cmd++;
-    if (!cmd[0]) return;
-    if (strncasecmp(cmd, "AT", 2) != 0) {
-        err();
-        return;
-    }
-    const char* c = cmd + 2;
-    load_props();  // identity follows props, picked up on re-query
-    build_efs();   // EF contents derive from props (ICCID/SPN/AD)
-
+static void dispatch(const char* c) {
     if (*c == 0 || strcasecmp(c, "Z") == 0) { ok(); return; }
     if (strncasecmp(c, "E0", 2) == 0 || strncasecmp(c, "E1", 2) == 0) {
         ok();
@@ -302,12 +309,13 @@ static void handle_command(char* cmd) {
     if (strncasecmp(c, "+CGLA=", 6) == 0 || strncasecmp(c, "+CCHO=", 6) == 0 ||
         strncasecmp(c, "+CCHC=", 6) == 0) { err(); return; }  // no ISIM app
     // --- operator / registration
-    if (strcasecmp(c, "+COPS?") == 0) {
+    if (strcasecmp(c, "+COPS?") == 0) {  // also used inside compound lines
         const char* v = g_cops_fmt == 2 ? P_OPN : g_cops_fmt == 1 ? P_OPS : P_OPL;
         if (g_cfun)
-            sendf("\r\n+COPS: 0,%d,\"%s\",0\r\n\r\nOK\r\n", g_cops_fmt, v);
+            sendf("\r\n+COPS: 0,%d,\"%s\",0\r\n", g_cops_fmt, v);
         else
-            send_raw("\r\n+COPS: 0\r\n\r\nOK\r\n");
+            send_raw("\r\n+COPS: 0\r\n");
+        ok();
         return;
     }
     if (strcasecmp(c, "+COPS=?") == 0) {
@@ -316,12 +324,11 @@ static void handle_command(char* cmd) {
         return;
     }
     if (strncasecmp(c, "+COPS=", 6) == 0) {
-        // reference-ril selects the query format as AT+COPS=3,0,<fmt>
-        // (third field), not the standard second field. Follow its usage.
-        int mode = -1, f2 = -1, f3 = -1;
-        int n = sscanf(c + 6, "%d,%d,%d", &mode, &f2, &f3);
-        if (n == 3 && f3 >= 0 && f3 <= 2) g_cops_fmt = f3;
-        else if (n == 2 && mode != 3 && f2 >= 0 && f2 <= 2) g_cops_fmt = f2;
+        // Query format lives in the second field: reference-ril cycles it
+        // via the compound AT+COPS=3,0;+COPS?;+COPS=3,1;+COPS?;...
+        int mode = -1, fmt = -1;
+        if (sscanf(c + 6, "%d,%d", &mode, &fmt) == 2 && fmt >= 0 && fmt <= 2)
+            g_cops_fmt = fmt;
         ok();
         return;
     }
@@ -391,6 +398,39 @@ static void handle_command(char* cmd) {
     err();
 }
 
+// One input line = one AT command, or a compound chain joined by ';'
+// (reference-ril's getOperator sends exactly that:
+//  AT+COPS=3,0;+COPS?;+COPS=3,1;+COPS?;+COPS=3,2;+COPS?).
+// Intermediate final results are suppressed; an ERROR aborts the chain.
+// (No command we answer carries ';' inside a quoted argument.)
+static void handle_line(char* line) {
+    while (*line == ' ' || *line == '\t') line++;
+    if (!line[0]) return;
+    g_olen = 0;
+    g_aborted = 0;
+    load_props();  // identity follows props, picked up on re-query
+    build_efs();   // EF contents derive from props (ICCID/SPN/AD)
+    char* seg = line;
+    int first = 1;
+    while (seg) {
+        char* semi = strchr(seg, ';');
+        if (semi) *semi = 0;
+        g_suppress_final = (semi != NULL);
+        if (first) {
+            if (strncasecmp(seg, "AT", 2) != 0) { err(); break; }
+            dispatch(seg + 2);
+            first = 0;
+        } else {
+            while (*seg == ' ' || *seg == '\t') seg++;
+            if (*seg) dispatch(seg);
+        }
+        if (g_aborted) break;
+        seg = semi ? semi + 1 : NULL;
+    }
+    g_suppress_final = 0;
+    resp_flush();
+}
+
 int main(int argc, char** argv) {
     int port = argc > 1 ? atoi(argv[1]) : 8901;
     build_efs();
@@ -416,7 +456,7 @@ int main(int argc, char** argv) {
             if (ch == '\r' || ch == '\n') {
                 if (n > 0) {
                     line[n] = 0;
-                    handle_command(line);
+                    handle_line(line);
                     n = 0;
                 }
             } else if (n < (int)sizeof(line) - 1) {
