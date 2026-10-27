@@ -30,4 +30,13 @@ int __isoc23_sscanf(const char* str, const char* fmt, ...) {
     va_end(ap);
     return ret;
 }
+
+// C translation units get glibc's __isoc99_sscanf redirect instead.
+int __isoc99_sscanf(const char* str, const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int ret = vsscanf(str, fmt, ap);
+    va_end(ap);
+    return ret;
+}
 }  // extern "C"
