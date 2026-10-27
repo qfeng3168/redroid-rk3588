@@ -22,6 +22,11 @@
 #include <aidl/android/hardware/gnss/BnGnssDebug.h>
 #include <aidl/android/hardware/gnss/BnGnssMeasurementInterface.h>
 #include <aidl/android/hardware/gnss/BnGnssPowerIndication.h>
+#include <aidl/android/hardware/gnss/BnGnssBatching.h>
+#include <aidl/android/hardware/gnss/BnGnssGeofence.h>
+#include <aidl/android/hardware/gnss/BnGnssNavigationMessageInterface.h>
+#include <aidl/android/hardware/gnss/BnGnssPsds.h>
+#include <aidl/android/hardware/gnss/measurement_corrections/BnMeasurementCorrectionsInterface.h>
 #include <aidl/android/hardware/gnss/visibility_control/BnGnssVisibilityControl.h>
 
 #include <android-base/logging.h>
@@ -180,6 +185,71 @@ class GnssVisibilityControlImpl
     }
 };
 
+class GnssPsdsImpl : public agnss::BnGnssPsds {
+    ScopedAStatus setCallback(
+            const std::shared_ptr<agnss::IGnssPsdsCallback>&) override {
+        return ScopedAStatus::ok();
+    }
+    ScopedAStatus injectPsdsData(agnss::PsdsType,
+                                 const std::vector<uint8_t>&) override {
+        return ScopedAStatus::ok();
+    }
+};
+
+class GnssBatchingImpl : public agnss::BnGnssBatching {
+    ScopedAStatus init(
+            const std::shared_ptr<agnss::IGnssBatchingCallback>&) override {
+        return ScopedAStatus::ok();
+    }
+    ScopedAStatus getBatchSize(int32_t* out) override {
+        *out = 0;
+        return ScopedAStatus::ok();
+    }
+    ScopedAStatus start(const agnss::IGnssBatching::Options&) override {
+        return ScopedAStatus::ok();
+    }
+    ScopedAStatus flush() override { return ScopedAStatus::ok(); }
+    ScopedAStatus stop() override { return ScopedAStatus::ok(); }
+    ScopedAStatus cleanup() override { return ScopedAStatus::ok(); }
+};
+
+class GnssGeofenceImpl : public agnss::BnGnssGeofence {
+    ScopedAStatus setCallback(
+            const std::shared_ptr<agnss::IGnssGeofenceCallback>&) override {
+        return ScopedAStatus::ok();
+    }
+    ScopedAStatus addGeofence(int32_t, double, double, double, int32_t, int32_t,
+                              int32_t, int32_t) override {
+        return ScopedAStatus::ok();
+    }
+    ScopedAStatus pauseGeofence(int32_t) override { return ScopedAStatus::ok(); }
+    ScopedAStatus resumeGeofence(int32_t, int32_t) override {
+        return ScopedAStatus::ok();
+    }
+    ScopedAStatus removeGeofence(int32_t) override { return ScopedAStatus::ok(); }
+};
+
+class GnssNavigationMessageImpl : public agnss::BnGnssNavigationMessageInterface {
+    ScopedAStatus setCallback(
+            const std::shared_ptr<agnss::IGnssNavigationMessageCallback>&) override {
+        return ScopedAStatus::ok();
+    }
+    ScopedAStatus close() override { return ScopedAStatus::ok(); }
+};
+
+class MeasurementCorrectionsImpl
+        : public agnss::measurement_corrections::BnMeasurementCorrectionsInterface {
+    ScopedAStatus setCorrections(
+            const agnss::measurement_corrections::MeasurementCorrections&) override {
+        return ScopedAStatus::ok();
+    }
+    ScopedAStatus setCallback(const std::shared_ptr<
+                              agnss::measurement_corrections::IMeasurementCorrectionsCallback>&)
+            override {
+        return ScopedAStatus::ok();
+    }
+};
+
 // ------------------------------- engine ------------------------------------
 
 struct SatDef {
@@ -228,6 +298,11 @@ class GnssImpl : public agnss::BnGnss {
         power_ = ndk::SharedRefBase::make<GnssPowerIndicationImpl>();
         antenna_ = ndk::SharedRefBase::make<GnssAntennaInfoImpl>();
         visibility_ = ndk::SharedRefBase::make<GnssVisibilityControlImpl>();
+        psds_ = ndk::SharedRefBase::make<GnssPsdsImpl>();
+        batching_ = ndk::SharedRefBase::make<GnssBatchingImpl>();
+        geofence_ = ndk::SharedRefBase::make<GnssGeofenceImpl>();
+        navMessage_ = ndk::SharedRefBase::make<GnssNavigationMessageImpl>();
+        measurementCorrections_ = ndk::SharedRefBase::make<MeasurementCorrectionsImpl>();
     }
     ~GnssImpl() override {
         {
@@ -266,7 +341,11 @@ class GnssImpl : public agnss::BnGnss {
     }
     ScopedAStatus getExtensionPsds(
             std::shared_ptr<agnss::IGnssPsds>* out) override {
-        *out = nullptr;
+        // The framework JNI dereferences the Psds extension without a null
+        // check (GnssPsdsAidl::setCallback segfaults system_server), so this
+        // must never be null in this guest build. Same for the other
+        // @nullable extensions below.
+        *out = psds_;
         return ScopedAStatus::ok();
     }
     ScopedAStatus getExtensionGnssConfiguration(
@@ -286,17 +365,17 @@ class GnssImpl : public agnss::BnGnss {
     }
     ScopedAStatus getExtensionGnssBatching(
             std::shared_ptr<agnss::IGnssBatching>* out) override {
-        *out = nullptr;
+        *out = batching_;
         return ScopedAStatus::ok();
     }
     ScopedAStatus getExtensionGnssGeofence(
             std::shared_ptr<agnss::IGnssGeofence>* out) override {
-        *out = nullptr;
+        *out = geofence_;
         return ScopedAStatus::ok();
     }
     ScopedAStatus getExtensionGnssNavigationMessage(
             std::shared_ptr<agnss::IGnssNavigationMessageInterface>* out) override {
-        *out = nullptr;
+        *out = navMessage_;
         return ScopedAStatus::ok();
     }
     ScopedAStatus getExtensionAGnss(std::shared_ptr<agnss::IAGnss>* out) override {
@@ -374,7 +453,7 @@ class GnssImpl : public agnss::BnGnss {
     ScopedAStatus getExtensionMeasurementCorrections(
             std::shared_ptr<agnss::measurement_corrections::IMeasurementCorrectionsInterface>*
                     out) override {
-        *out = nullptr;
+        *out = measurementCorrections_;
         return ScopedAStatus::ok();
     }
     ScopedAStatus startSvStatus() override {
@@ -574,6 +653,12 @@ class GnssImpl : public agnss::BnGnss {
     std::shared_ptr<agnss::IGnssPowerIndication> power_;
     std::shared_ptr<agnss::IGnssAntennaInfo> antenna_;
     std::shared_ptr<agnss::visibility_control::IGnssVisibilityControl> visibility_;
+    std::shared_ptr<agnss::IGnssPsds> psds_;
+    std::shared_ptr<agnss::IGnssBatching> batching_;
+    std::shared_ptr<agnss::IGnssGeofence> geofence_;
+    std::shared_ptr<agnss::IGnssNavigationMessageInterface> navMessage_;
+    std::shared_ptr<agnss::measurement_corrections::IMeasurementCorrectionsInterface>
+            measurementCorrections_;
 };
 
 int main() {
