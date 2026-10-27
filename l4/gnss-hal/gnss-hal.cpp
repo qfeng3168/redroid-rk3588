@@ -487,10 +487,11 @@ class GnssImpl : public agnss::BnGnss {
             v.elevationDegrees = s.elev;
             v.azimuthDegrees = s.azim;
             v.carrierFrequencyHz = s.freqHz;
-            v.svFlag = IGnssCallback::GnssSvFlags::HAS_EPHEMERIS_DATA |
-                       IGnssCallback::GnssSvFlags::HAS_ALMANAC_DATA |
-                       IGnssCallback::GnssSvFlags::HAS_CARRIER_FREQUENCY |
-                       (s.used ? IGnssCallback::GnssSvFlags::USED_IN_FIX : 0);
+            // GnssSvFlags is a scoped enum: combine as plain ints.
+            v.svFlag = (int32_t)IGnssCallback::GnssSvFlags::HAS_EPHEMERIS_DATA |
+                       (int32_t)IGnssCallback::GnssSvFlags::HAS_ALMANAC_DATA |
+                       (int32_t)IGnssCallback::GnssSvFlags::HAS_CARRIER_FREQUENCY |
+                       (s.used ? (int32_t)IGnssCallback::GnssSvFlags::USED_IN_FIX : 0);
             out.push_back(v);
             i++;
         }
