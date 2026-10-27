@@ -65,3 +65,28 @@ Explored all three gfxstream routes against the Mali-G610 (ARM g24p0 blob, kbase
 - **No mesa escape**: the GPU has NO DRM node (card0=rockchip-drm display, card1/renderD128=RKNPU). Panfrost/PanVK would need a kernel swap — out of scope on the production NAS.
 - Reopen conditions: ARM driver gaining VK_EXT_external_memory_host, a BSP kernel exposing a panfrost DRM GPU, or gfxstream dropping its host-EGL dependency.
 - Production baseline stays guest_swiftshader (36 s boot, 2.33 GiB at the optimized 2G profile).
+
+
+## 1080p60 profile + low-RAM experiments (2026-10-27, measured)
+
+**Working 1920x1080@60 config** (verified boot_completed=1, adb online, screencap OK):
+```bash
+docker exec cvd-ho sh -c 'cd /cvd/work && HOME=/cvd/work ./bin/launch_cvd -daemon \
+  -report_anonymous_usage_stats=n -gpu_mode=guest_swiftshader \
+  -memory_mb=2048 -cpus=4 -resume=false \
+  -x_res=1920 -y_res=1080 -refresh_rate_hz=60 \
+  -enable_host_bluetooth=false -enable_host_nfc=false -enable_host_uwb=false -record_screen=false'
+# NOTE: modem simulator intentionally left ON (default). Boot ~49 s incl. assembly.
+# Fleet: RSS sum ~2.72 G over ~50 procs (docker stats 2.52 GiB); guest MemAvailable ~0.65 G.
+# Reality check: refresh is configured 60 Hz, but SwiftShader rendering at 1080p is
+# CPU-bound — Settings scroll test: 29 frames, 83% janky. Static/light UI is fine.
+```
+
+**⚠️ `-enable_modem_simulator=false` is NOT a safe trim** (supersedes the "Trims that WORK" list above, which included it from a boot_completed-only check at 720p):
+- Guest `vendor.ril-daemon` exits status 1 in ~36 ms and init restarts it 200+ times; the phone process (uid 1001) storms servicemanager for `IRadioData/slot1` every ~200 ms (`ctl.interface_start` churn).
+- At 720p/2G it once still reached boot_completed in 36 s; at 1080p and/or ≤1G guest RAM it blocks boot indefinitely (verified >20 min at 1024M full, >34 min at 768M minimal; guest-internal proof: keystore2 `await_boot_completed ... Overdue 1768s`).
+- With the simulator ON: ril-daemon starts once, modem_simulator logs "added one RIL client", IRadioData mentions drop to single digits. Keep it ON.
+
+**⚠️ adb can lie**: after several launch/stop cycles the container's adb server loses the device registration — `adb devices` is empty while the guest is fully booted. Ground truth is the guest logcat (`/cvd/work/cuttlefish_runtime/logcat`): `Finished processing BOOT_COMPLETED for u0` = booted; keystore2 `await_boot_completed` overdue lines = not booted. Fix: inside the container run `./bin/adb connect localhost:6520` to re-register.
+
+**1G-total quest verdict**: fleet ≤1 GiB AND bootable is **not achievable** with this build's launch flags. 768M minimal + wifi off hit 906 MiB fleet but never completed boot (34 min); 1024M full/minimal likewise. Smallest verified bootable class is 2G guest (fleet ≈2.5 G at 1080p). The wedged-boot data stub from these experiments is kept as `instances/cvd-1/*.wedged-bak`.
