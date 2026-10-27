@@ -29,7 +29,7 @@ echo "LINK"
 # Android linker as interpreter. $TOOLCHAIN/libs holds .so files pulled
 # from the target redroid guest (real APEX files).
 "$TOOLCHAIN/aospext_cc" -c cxx -d "$TOOLCHAIN/build_flags" \
-  "$TOOLCHAIN/objs/crtbegin_dynamic.o" $OBJS \
+  "$TOOLCHAIN/objs/crtbegin_dynamic.o" $OBJS "$TOOLCHAIN/objs/libclang_rt.builtins-aarch64-android.a" \
   "$TOOLCHAIN/objs/libc++.vendor.so" \
   "$TOOLCHAIN/libs/android.hardware.gnss-V2-ndk.so" \
   "$TOOLCHAIN/libs/libbinder_ndk.so" "$TOOLCHAIN/libs/libbase.so" \
