@@ -325,6 +325,14 @@ class GnssImpl : public agnss::BnGnss {
             cb_->gnssSetCapabilitiesCb(kCaps);
             cb_->gnssStatusCb(IGnssCallback::GnssStatusValue::ENGINE_ON);
         }
+        // Debug knob for end-to-end verification only (default off): with no
+        // app requesting location, the framework never calls start(), so no
+        // fix would ever be produced. autostart=1 makes the HAL emit fixes
+        // right after setCallback so dumpsys location can show a last fix.
+        if (prop_string("persist.l4.gnss.autostart", "0") == "1") {
+            locating_ = true;
+            ensureWorkerLocked();
+        }
         return ScopedAStatus::ok();
     }
     ScopedAStatus close() override {
