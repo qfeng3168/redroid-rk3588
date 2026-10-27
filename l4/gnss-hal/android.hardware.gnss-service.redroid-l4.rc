@@ -1,0 +1,6 @@
+# L4-M3 virtual GNSS: binderized AIDL IGnss service (synthetic fix,
+# SV status and NMEA; persona via persist.l4.gnss.* sysprops).
+service vendor.gnss-l4 /vendor/bin/hw/android.hardware.gnss-service.redroid-l4
+    class main
+    user system
+    group system

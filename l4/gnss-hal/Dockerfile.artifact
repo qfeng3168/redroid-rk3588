@@ -1,0 +1,5 @@
+# Scratch image carrying the L4 GNSS service payload for the box to pull.
+FROM scratch
+COPY payload/android.hardware.gnss-service.redroid-l4 /android.hardware.gnss-service.redroid-l4
+COPY payload/android.hardware.gnss-service.redroid-l4.rc /android.hardware.gnss-service.redroid-l4.rc
+COPY payload/android.hardware.gnss.xml /android.hardware.gnss.xml

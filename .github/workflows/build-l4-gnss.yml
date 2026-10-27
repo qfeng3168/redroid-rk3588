@@ -1,0 +1,66 @@
+name: build-l4-gnss
+
+# Build the L4-M3 virtual GNSS HAL service for the redroid guest on G98,
+# and publish the payload as a GHCR scratch image. The box pulls it via
+# the ghcr.1ms.run mirror and bind-mounts the files into the redroid
+# container (binary + init rc + VINTF fragment).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "l4/gnss-hal/**"
+      - "l4/toolchain.tar.gz"
+      - ".github/workflows/build-l4-gnss.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang file binutils
+
+      - name: Build GNSS service
+        run: bash l4/gnss-hal/build.sh
+
+      - name: Verify ELF (Android interpreter, no glibc deps)
+        run: |
+          BIN=l4/gnss-hal/out/android.hardware.gnss-service.redroid-l4
+          readelf -p .interp "$BIN" | grep -q "/system/bin/linker64"
+          if readelf -d "$BIN" | grep -E "libstdc\+\+\.so\.6|libc\.so\.6|libgcc_s"; then
+            echo "glibc dependency leaked into the binary" >&2
+            exit 1
+          fi
+          readelf -d "$BIN" | grep NEEDED
+
+      - name: Package payload image
+        run: |
+          mkdir -p l4/gnss-hal/payload
+          cp l4/gnss-hal/out/android.hardware.gnss-service.redroid-l4 l4/gnss-hal/payload/
+          cp l4/gnss-hal/android.hardware.gnss-service.redroid-l4.rc l4/gnss-hal/payload/
+          cp l4/gnss-hal/android.hardware.gnss.xml l4/gnss-hal/payload/
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push payload image
+        uses: docker/build-push-action@v6
+        with:
+          context: l4/gnss-hal
+          file: l4/gnss-hal/Dockerfile.artifact
+          push: true
+          tags: |
+            ghcr.io/qfeng3168/redroid-l4-gnss:latest
+            ghcr.io/qfeng3168/redroid-l4-gnss:${{ github.sha }}

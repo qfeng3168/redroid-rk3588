@@ -1,0 +1,143 @@
+/*
+ * This file is auto-generated.  DO NOT MODIFY.
+ * Using: /home/hatch/workspace/l4-tools/bt35/android-15/aidl --lang=ndk --stability vintf --structured -I aidl-src --out=gen/src --header_out=gen/include aidl-src/android/hardware/gnss/BlocklistedSource.aidl aidl-src/android/hardware/gnss/CorrelationVector.aidl aidl-src/android/hardware/gnss/ElapsedRealtime.aidl aidl-src/android/hardware/gnss/GnssClock.aidl aidl-src/android/hardware/gnss/GnssConstellationType.aidl aidl-src/android/hardware/gnss/GnssData.aidl aidl-src/android/hardware/gnss/GnssLocation.aidl aidl-src/android/hardware/gnss/GnssMeasurement.aidl aidl-src/android/hardware/gnss/GnssMultipathIndicator.aidl aidl-src/android/hardware/gnss/GnssPowerStats.aidl aidl-src/android/hardware/gnss/GnssSignalType.aidl aidl-src/android/hardware/gnss/IAGnss.aidl aidl-src/android/hardware/gnss/IAGnssCallback.aidl aidl-src/android/hardware/gnss/IAGnssRil.aidl aidl-src/android/hardware/gnss/IAGnssRilCallback.aidl aidl-src/android/hardware/gnss/IGnss.aidl aidl-src/android/hardware/gnss/IGnssAntennaInfo.aidl aidl-src/android/hardware/gnss/IGnssAntennaInfoCallback.aidl aidl-src/android/hardware/gnss/IGnssBatching.aidl aidl-src/android/hardware/gnss/IGnssBatchingCallback.aidl aidl-src/android/hardware/gnss/IGnssCallback.aidl aidl-src/android/hardware/gnss/IGnssConfiguration.aidl aidl-src/android/hardware/gnss/IGnssDebug.aidl aidl-src/android/hardware/gnss/IGnssGeofence.aidl aidl-src/android/hardware/gnss/IGnssGeofenceCallback.aidl aidl-src/android/hardware/gnss/IGnssMeasurementCallback.aidl aidl-src/android/hardware/gnss/IGnssMeasurementInterface.aidl aidl-src/android/hardware/gnss/IGnssNavigationMessageCallback.aidl aidl-src/android/hardware/gnss/IGnssNavigationMessageInterface.aidl aidl-src/android/hardware/gnss/IGnssPowerIndication.aidl aidl-src/android/hardware/gnss/IGnssPowerIndicationCallback.aidl aidl-src/android/hardware/gnss/IGnssPsds.aidl aidl-src/android/hardware/gnss/IGnssPsdsCallback.aidl aidl-src/android/hardware/gnss/PsdsType.aidl aidl-src/android/hardware/gnss/SatelliteClockInfo.aidl aidl-src/android/hardware/gnss/SatellitePositionEcef.aidl aidl-src/android/hardware/gnss/SatellitePvt.aidl aidl-src/android/hardware/gnss/SatelliteVelocityEcef.aidl aidl-src/android/hardware/gnss/measurement_corrections/IMeasurementCorrectionsCallback.aidl aidl-src/android/hardware/gnss/measurement_corrections/IMeasurementCorrectionsInterface.aidl aidl-src/android/hardware/gnss/measurement_corrections/MeasurementCorrections.aidl aidl-src/android/hardware/gnss/measurement_corrections/ReflectingPlane.aidl aidl-src/android/hardware/gnss/measurement_corrections/SingleSatCorrection.aidl aidl-src/android/hardware/gnss/visibility_control/IGnssVisibilityControl.aidl aidl-src/android/hardware/gnss/visibility_control/IGnssVisibilityControlCallback.aidl
+ */
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+#include <android/binder_enums.h>
+#include <android/binder_interface_utils.h>
+#include <aidl/android/hardware/gnss/IAGnssCallback.h>
+#ifdef BINDER_STABILITY_SUPPORT
+#include <android/binder_stability.h>
+#endif  // BINDER_STABILITY_SUPPORT
+
+namespace aidl {
+namespace android {
+namespace hardware {
+namespace gnss {
+class IAGnssCallbackDelegator;
+
+class IAGnssCallback : public ::ndk::ICInterface {
+public:
+  typedef IAGnssCallbackDelegator DefaultDelegator;
+  static const char* descriptor;
+  IAGnssCallback();
+  virtual ~IAGnssCallback();
+
+  enum class AGnssType : int32_t {
+    SUPL = 1,
+    C2K = 2,
+    SUPL_EIMS = 3,
+    SUPL_IMS = 4,
+  };
+
+  enum class AGnssStatusValue : int32_t {
+    REQUEST_AGNSS_DATA_CONN = 1,
+    RELEASE_AGNSS_DATA_CONN = 2,
+    AGNSS_DATA_CONNECTED = 3,
+    AGNSS_DATA_CONN_DONE = 4,
+    AGNSS_DATA_CONN_FAILED = 5,
+  };
+
+  static constexpr uint32_t TRANSACTION_agnssStatusCb = FIRST_CALL_TRANSACTION + 0;
+
+  static std::shared_ptr<IAGnssCallback> fromBinder(const ::ndk::SpAIBinder& binder);
+  static binder_status_t writeToParcel(AParcel* parcel, const std::shared_ptr<IAGnssCallback>& instance);
+  static binder_status_t readFromParcel(const AParcel* parcel, std::shared_ptr<IAGnssCallback>* instance);
+  static bool setDefaultImpl(const std::shared_ptr<IAGnssCallback>& impl);
+  static const std::shared_ptr<IAGnssCallback>& getDefaultImpl();
+  virtual ::ndk::ScopedAStatus agnssStatusCb(::aidl::android::hardware::gnss::IAGnssCallback::AGnssType in_type, ::aidl::android::hardware::gnss::IAGnssCallback::AGnssStatusValue in_status) = 0;
+private:
+  static std::shared_ptr<IAGnssCallback> default_impl;
+};
+class IAGnssCallbackDefault : public IAGnssCallback {
+public:
+  ::ndk::ScopedAStatus agnssStatusCb(::aidl::android::hardware::gnss::IAGnssCallback::AGnssType in_type, ::aidl::android::hardware::gnss::IAGnssCallback::AGnssStatusValue in_status) override;
+  ::ndk::SpAIBinder asBinder() override;
+  bool isRemote() override;
+};
+}  // namespace gnss
+}  // namespace hardware
+}  // namespace android
+}  // namespace aidl
+namespace aidl {
+namespace android {
+namespace hardware {
+namespace gnss {
+[[nodiscard]] static inline std::string toString(IAGnssCallback::AGnssType val) {
+  switch(val) {
+  case IAGnssCallback::AGnssType::SUPL:
+    return "SUPL";
+  case IAGnssCallback::AGnssType::C2K:
+    return "C2K";
+  case IAGnssCallback::AGnssType::SUPL_EIMS:
+    return "SUPL_EIMS";
+  case IAGnssCallback::AGnssType::SUPL_IMS:
+    return "SUPL_IMS";
+  default:
+    return std::to_string(static_cast<int32_t>(val));
+  }
+}
+}  // namespace gnss
+}  // namespace hardware
+}  // namespace android
+}  // namespace aidl
+namespace ndk {
+namespace internal {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++17-extensions"
+template <>
+constexpr inline std::array<aidl::android::hardware::gnss::IAGnssCallback::AGnssType, 4> enum_values<aidl::android::hardware::gnss::IAGnssCallback::AGnssType> = {
+  aidl::android::hardware::gnss::IAGnssCallback::AGnssType::SUPL,
+  aidl::android::hardware::gnss::IAGnssCallback::AGnssType::C2K,
+  aidl::android::hardware::gnss::IAGnssCallback::AGnssType::SUPL_EIMS,
+  aidl::android::hardware::gnss::IAGnssCallback::AGnssType::SUPL_IMS,
+};
+#pragma clang diagnostic pop
+}  // namespace internal
+}  // namespace ndk
+namespace aidl {
+namespace android {
+namespace hardware {
+namespace gnss {
+[[nodiscard]] static inline std::string toString(IAGnssCallback::AGnssStatusValue val) {
+  switch(val) {
+  case IAGnssCallback::AGnssStatusValue::REQUEST_AGNSS_DATA_CONN:
+    return "REQUEST_AGNSS_DATA_CONN";
+  case IAGnssCallback::AGnssStatusValue::RELEASE_AGNSS_DATA_CONN:
+    return "RELEASE_AGNSS_DATA_CONN";
+  case IAGnssCallback::AGnssStatusValue::AGNSS_DATA_CONNECTED:
+    return "AGNSS_DATA_CONNECTED";
+  case IAGnssCallback::AGnssStatusValue::AGNSS_DATA_CONN_DONE:
+    return "AGNSS_DATA_CONN_DONE";
+  case IAGnssCallback::AGnssStatusValue::AGNSS_DATA_CONN_FAILED:
+    return "AGNSS_DATA_CONN_FAILED";
+  default:
+    return std::to_string(static_cast<int32_t>(val));
+  }
+}
+}  // namespace gnss
+}  // namespace hardware
+}  // namespace android
+}  // namespace aidl
+namespace ndk {
+namespace internal {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++17-extensions"
+template <>
+constexpr inline std::array<aidl::android::hardware::gnss::IAGnssCallback::AGnssStatusValue, 5> enum_values<aidl::android::hardware::gnss::IAGnssCallback::AGnssStatusValue> = {
+  aidl::android::hardware::gnss::IAGnssCallback::AGnssStatusValue::REQUEST_AGNSS_DATA_CONN,
+  aidl::android::hardware::gnss::IAGnssCallback::AGnssStatusValue::RELEASE_AGNSS_DATA_CONN,
+  aidl::android::hardware::gnss::IAGnssCallback::AGnssStatusValue::AGNSS_DATA_CONNECTED,
+  aidl::android::hardware::gnss::IAGnssCallback::AGnssStatusValue::AGNSS_DATA_CONN_DONE,
+  aidl::android::hardware::gnss::IAGnssCallback::AGnssStatusValue::AGNSS_DATA_CONN_FAILED,
+};
+#pragma clang diagnostic pop
+}  // namespace internal
+}  // namespace ndk
