@@ -48,3 +48,10 @@ docker exec cvd-ho sh -c 'cd /cvd/work && HOME=/cvd/work ./bin/stop_cvd'   # 停
 - 图形探测在容器内报 EGL/Vulkan 不可用属正常：软件渲染走 guest_swiftshader，与宿主 Mali 无关；gfxstream 硬件渲染是 M4 探索项。
 - `docker exec` 断开不会杀掉 -daemon 的实例进程组（实测 SSH 会话被掐后实例继续启动）。
 - webRTC/vsock 的 connect 报错刷 launcher.log = guest 没起来时的连锁噪音，先查 crosvm 自己的日志行（`grep "^crosvm " logs/launcher.log`）。
+
+## Optimized launch profile (2026-10-27, measured)
+Baseline 4G/full-peripherals: 4.3 GiB steady, 47 s boot. Optimized: **2.68 GiB steady, 35 s boot**.
+- `-memory_mb=2048` (A17 practical floor: guest MemAvailable ~0.7 GiB at 2G)
+- Trims that WORK via flags: `-enable_host_bluetooth=false -enable_host_nfc=false -enable_host_uwb=false -enable_modem_simulator=false -record_screen=false` (casimir/modem/screen_recording processes disappear; saves ~50 MiB fleet RSS)
+- netsimd (~26 MiB) CANNOT be disabled by flags in this build: generated config has `start_netsim: true` + `has_bluetooth: true` from the phone device config; `-enable_host_bluetooth=false` only sets `enable_host_bluetooth_connector: false`; `-netsim=false` is a no-op for this. Do not hand-edit the generated cuttlefish_config.json.
+- Fleet accounting (RSS): Android crosvm = guest RAM; OpenWrt crosvm ~230 MiB is a second VM (guest router/Wi-Fi AP); all other ~50 host processes ≈ 355 MiB total, HO itself only ~6 MiB.
