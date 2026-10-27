@@ -2,3 +2,4 @@
 FROM scratch
 COPY payload/l4-modemd /l4-modemd
 COPY payload/l4-modemd.rc /l4-modemd.rc
+COPY payload/android.hardware.radio@1.1.xml /android.hardware.radio@1.1.xml

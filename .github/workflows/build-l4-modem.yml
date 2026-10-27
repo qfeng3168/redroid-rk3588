@@ -47,6 +47,7 @@ jobs:
           mkdir -p l4/modem/payload
           cp l4/modem/out/l4-modemd l4/modem/payload/
           cp l4/modem/l4-modemd.rc l4/modem/payload/
+          cp "l4/modem/android.hardware.radio@1.1.xml" l4/modem/payload/
 
       - name: Log in to GHCR
         uses: docker/login-action@v3

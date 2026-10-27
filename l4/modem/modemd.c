@@ -356,8 +356,21 @@ static void dispatch(const char* c) {
     }
     if (strncasecmp(c, "+CEREG=", 7) == 0) { ok(); return; }
     if (strcasecmp(c, "+CSQ") == 0) {
-        sendf("\r\n+CSQ: %d,99\r\n\r\nOK\r\n", P_RSSI);
+        // reference-ril parses +CSQ as a full RIL_SignalStrength_v6..v10
+        // int array (>=13 values) — a bare "rssi,ber" pair fails its parse.
+        // GW carries our persona; other RATs are marked invalid (INT_MAX).
+        sendf("\r\n+CSQ: %d,0,2147483647,2147483647,2147483647,2147483647,"
+              "2147483647,2147483647,2147483647,2147483647,2147483647,"
+              "2147483647,2147483647,2147483647,2147483647,2147483647,"
+              "2147483647,2147483647,2147483647,2147483647\r\n\r\nOK\r\n",
+              P_RSSI);
         return;
+    }
+    if (c[0] == 'S' || c[0] == 's') {  // ATS<n>=<v> set / ATS<n>? query
+        const char* p = c + 1;
+        while (*p >= '0' && *p <= '9') p++;
+        if (*p == '=') { ok(); return; }
+        if (*p == '?') { send_raw("\r\n000\r\n\r\nOK\r\n"); return; }
     }
     // --- data context queries (no data calls in this milestone)
     if (strcasecmp(c, "+CGACT?") == 0) { send_raw("\r\n+CGACT: 1,0\r\n\r\nOK\r\n"); return; }
