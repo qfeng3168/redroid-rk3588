@@ -151,7 +151,7 @@ class GnssPowerIndicationImpl : public agnss::BnGnssPowerIndication {
     ScopedAStatus requestGnssPowerStats() override {
         if (cb_) {
             agnss::GnssPowerStats stats;
-            stats.elapsedRealtime.flags = agnss::ElapsedRealtime::FLAG_TIMESTAMP_UNCERTAINTY_NS;
+            stats.elapsedRealtime.flags = agnss::ElapsedRealtime::HAS_TIMESTAMP_NS | agnss::ElapsedRealtime::HAS_TIME_UNCERTAINTY_NS;
             stats.elapsedRealtime.timestampNs = elapsed_ns();
             stats.elapsedRealtime.timeUncertaintyNs = 1000000;
             cb_->gnssPowerStatsCb(stats);
@@ -468,7 +468,7 @@ class GnssImpl : public agnss::BnGnss {
         loc.speedAccuracyMetersPerSecond = 0.5;
         loc.bearingAccuracyDegrees = 5.0;
         loc.timestampMillis = wall_ms();
-        loc.elapsedRealtime.flags = agnss::ElapsedRealtime::FLAG_TIMESTAMP_UNCERTAINTY_NS;
+        loc.elapsedRealtime.flags = agnss::ElapsedRealtime::HAS_TIMESTAMP_NS | agnss::ElapsedRealtime::HAS_TIME_UNCERTAINTY_NS;
         loc.elapsedRealtime.timestampNs = elapsed_ns();
         loc.elapsedRealtime.timeUncertaintyNs = 1000000;
         return loc;
