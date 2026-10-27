@@ -13,7 +13,10 @@ fi
 cd "$DIR"
 mkdir -p obj out
 echo "CC modemd.c"
-"$TOOLCHAIN/aospext_cc" -c c -d "$TOOLCHAIN/build_flags" -c "$DIR/modemd.c" -o obj/modemd.o
+# NOTE: the compiler's own -c must not be the first passthrough arg —
+# aospext_cc's getopts would eat it as its -c option. -O2 first is safe
+# (unknown options stop its parsing).
+"$TOOLCHAIN/aospext_cc" -c c -d "$TOOLCHAIN/build_flags" -O2 -c "$DIR/modemd.c" -o obj/modemd.o
 echo "CXX glibc_shim.cpp"
 "$TOOLCHAIN/aospext_cc" -c cxx -d "$TOOLCHAIN/build_flags" \
   -nostdinc++ -I"$TOOLCHAIN/includes/external/libcxx/include" \
