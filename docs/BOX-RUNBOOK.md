@@ -55,3 +55,13 @@ Baseline 4G/full-peripherals: 4.3 GiB steady, 47 s boot. Optimized: **2.68 GiB s
 - Trims that WORK via flags: `-enable_host_bluetooth=false -enable_host_nfc=false -enable_host_uwb=false -enable_modem_simulator=false -record_screen=false` (casimir/modem/screen_recording processes disappear; saves ~50 MiB fleet RSS)
 - netsimd (~26 MiB) CANNOT be disabled by flags in this build: generated config has `start_netsim: true` + `has_bluetooth: true` from the phone device config; `-enable_host_bluetooth=false` only sets `enable_host_bluetooth_connector: false`; `-netsim=false` is a no-op for this. Do not hand-edit the generated cuttlefish_config.json.
 - Fleet accounting (RSS): Android crosvm = guest RAM; OpenWrt crosvm ~230 MiB is a second VM (guest router/Wi-Fi AP); all other ~50 host processes ≈ 355 MiB total, HO itself only ~6 MiB.
+
+## M4 verdict: gfxstream HW rendering NOT viable on stock G98 stack (2026-10-27, measured)
+Explored all three gfxstream routes against the Mali-G610 (ARM g24p0 blob, kbase /dev/mali0 only):
+- **Vulkan plumbing WORKS**: staging the host Mali Vulkan stack (libMaliVulkan.so.1 + libmali.so.1.9.0 + libmali-hook.so.1.9.0 + libxcb-dri2.so.0 + mali.json ICD) into the container's default paths (/usr/share/vulkan/icd.d + /usr/lib/aarch64-linux-gnu + ldconfig) makes graphics_detector enumerate Mali-G610 with NO env vars. Staging dir kept at /vol2/cuttlefish/mali-stack.
+- **Wall 1 (vhost-user GPU)**: `-gpu_mode=gfxstream_guest_angle` defaults to vhost-user GPU on arm64, which hard-requires VK_EXT_external_memory_host — absent on g24p0 → assemble_cvd aborts. Flag to disable is `-gpu_vhost_user_mode=off` (NOT --enable_gpu_vhost_user, which launch_cvd rejects).
+- **Wall 2 (pure gfxstream)**: crosvm renderer init fails — host EGL cannot initialize a display headless. Proven twice: env-based (LD_LIBRARY_PATH/VK_DRIVER_FILES) and full default-path install of Mali EGL/GLES/GBM stubs in a privileged container with /dev/dri present.
+- **Wall 3 (guest_angle in-process)**: renderer init HANGS — v_gpu thread parked in futex, crosvm never opens /dev/mali0, guest kernel log stays 0 bytes (35 min). OpenWrt sidecar boots fine.
+- **No mesa escape**: the GPU has NO DRM node (card0=rockchip-drm display, card1/renderD128=RKNPU). Panfrost/PanVK would need a kernel swap — out of scope on the production NAS.
+- Reopen conditions: ARM driver gaining VK_EXT_external_memory_host, a BSP kernel exposing a panfrost DRM GPU, or gfxstream dropping its host-EGL dependency.
+- Production baseline stays guest_swiftshader (36 s boot, 2.33 GiB at the optimized 2G profile).
