@@ -1,0 +1,6 @@
+# Scratch image carrying the L4 sensors HAL payload for the box to pull.
+# Layout mirrors the target paths on the box's staging dir.
+FROM scratch
+COPY payload/android.hardware.sensors-service.redroid /android.hardware.sensors-service.redroid
+COPY payload/android.hardware.sensors-service.redroid.rc /android.hardware.sensors-service.redroid.rc
+COPY payload/android.hardware.sensors-service.redroid.xml /android.hardware.sensors-service.redroid.xml

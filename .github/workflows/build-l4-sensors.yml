@@ -1,0 +1,65 @@
+name: build-l4-sensors
+
+# Build the L4-M1 virtual sensors HAL (binderized AIDL ISensors service)
+# for the redroid guest on G98, and publish the payload as a GHCR scratch
+# image. The box pulls it via the ghcr.1ms.run mirror and bind-mounts the
+# three files into the redroid container.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "l4/**"
+      - ".github/workflows/build-l4-sensors.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang file binutils
+
+      - name: Build HAL
+        run: bash l4/sensors-hal/build.sh
+
+      - name: Verify ELF (Android interpreter, no glibc deps)
+        run: |
+          BIN=l4/sensors-hal/out/android.hardware.sensors-service.redroid
+          readelf -p .interp "$BIN" | grep -q "/system/bin/linker64"
+          if readelf -d "$BIN" | grep -E "libstdc\+\+\.so\.6|libc\.so\.6|libgcc_s"; then
+            echo "glibc dependency leaked into the binary" >&2
+            exit 1
+          fi
+          readelf -d "$BIN" | grep NEEDED
+
+      - name: Package payload image
+        run: |
+          mkdir -p l4/sensors-hal/payload
+          cp l4/sensors-hal/out/android.hardware.sensors-service.redroid l4/sensors-hal/payload/
+          cp l4/sensors-hal/android.hardware.sensors-service.redroid.rc l4/sensors-hal/payload/
+          cp l4/sensors-hal/android.hardware.sensors-service.redroid.xml l4/sensors-hal/payload/
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push payload image
+        uses: docker/build-push-action@v6
+        with:
+          context: l4/sensors-hal
+          file: l4/sensors-hal/Dockerfile.artifact
+          push: true
+          tags: |
+            ghcr.io/qfeng3168/redroid-l4-sensors:latest
+            ghcr.io/qfeng3168/redroid-l4-sensors:${{ github.sha }}

@@ -1,0 +1,8 @@
+# L4-M1 virtual sensors HAL (binderized AIDL service, synthetic data)
+service vendor.sensors.redroid /vendor/bin/hw/android.hardware.sensors-service.redroid
+    class hal
+    user system
+    group system
+    # The service registers android.hardware.sensors.ISensors/default itself.
+    # No capabilities needed: it only talks binder + writes to the FMQ that
+    # sensorservice hands it in initialize().
