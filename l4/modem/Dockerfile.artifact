@@ -1,0 +1,4 @@
+# Scratch image carrying the L4 modem daemon payload for the box to pull.
+FROM scratch
+COPY payload/l4-modemd /l4-modemd
+COPY payload/l4-modemd.rc /l4-modemd.rc

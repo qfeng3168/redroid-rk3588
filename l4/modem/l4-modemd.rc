@@ -1,0 +1,6 @@
+# L4-M2 virtual AT modem: stock libril/libreference-ril connects to
+# 127.0.0.1:8901 (rild.libargs=-p 8901, set in /vendor/build.prop).
+service vendor.modemd /vendor/bin/hw/l4-modemd 8901
+    class main
+    user system
+    group system inet
