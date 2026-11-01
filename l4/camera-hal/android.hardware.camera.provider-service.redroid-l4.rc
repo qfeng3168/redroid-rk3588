@@ -2,5 +2,8 @@
 # (synthetic frames; persona/pattern via persist.l4.camera.* sysprops).
 service vendor.camera-l4 /vendor/bin/hw/android.hardware.camera.provider-service.redroid-l4
     class hal
-    user cameraserver
+    user system
     group camera system
+    # NOTE: user must NOT be cameraserver — netd's UID firewall blocks
+    # egress sockets for the cameraserver UID, which the stream source
+    # (persist.l4.camera.source) needs. system/media/mediacodec pass.

@@ -39,4 +39,11 @@ int __isoc99_sscanf(const char* str, const char* fmt, ...) {
     va_end(ap);
     return ret;
 }
+
+// glibc 2.38 redirects strtol/strtoll to __isoc23_* names; Bionic only
+// carries the classic symbols (declared manually to avoid the redirect).
+long strtol(const char* s, char** end, int base);
+long long strtoll(const char* s, char** end, int base);
+long __isoc23_strtol(const char* s, char** end, int base) { return strtol(s, end, base); }
+long long __isoc23_strtoll(const char* s, char** end, int base) { return strtoll(s, end, base); }
 }  // extern "C"

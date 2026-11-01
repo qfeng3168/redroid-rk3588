@@ -24,7 +24,7 @@ while IFS= read -r f; do
   echo "CXX $f"
   "$TOOLCHAIN/aospext_cc" -c cxx -d "$TOOLCHAIN/build_flags" $INC -c "$f" -o "$o"
   OBJS="$OBJS $o"
-done < <(find "$HAL_DIR/gen/src" -name '*.cpp'; echo "$HAL_DIR/camera-hal.cpp"; echo "$HAL_DIR/glibc_shim.cpp")
+done < <(find "$HAL_DIR/gen/src" -name '*.cpp'; echo "$HAL_DIR/camera-hal.cpp"; echo "$HAL_DIR/stream.cpp"; echo "$HAL_DIR/glibc_shim.cpp")
 echo "LINK"
 # AOSP executable recipe: Bionic crtbegin/crtend, no driver-default libs,
 # Android linker as interpreter. $TOOLCHAIN/libs holds .so files pulled
@@ -37,6 +37,7 @@ echo "LINK"
   "$TOOLCHAIN/libs/android.hardware.camera.common-V1-ndk.so" \
   "$TOOLCHAIN/libs/android.hardware.camera.metadata-V1-ndk.so" \
   "$TOOLCHAIN/libs/libcamera_metadata.so" "$TOOLCHAIN/libs/libjpeg.so" \
+  "$TOOLCHAIN/libs/libmediandk.so" \
   "$TOOLCHAIN/libs/libfmq.so" \
   "$TOOLCHAIN/libs/libbinder_ndk.so" "$TOOLCHAIN/libs/libbase.so" \
   "$TOOLCHAIN/libs/libbinder.so" "$TOOLCHAIN/libs/libcutils.so" "$TOOLCHAIN/libs/libutils.so" \

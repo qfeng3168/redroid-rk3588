@@ -3,7 +3,11 @@
 // following the L4-M1/M3 pattern: binderized service + vintf fragment + rc.
 // Synthetic frames (color bars / solid / moving marker) written directly into
 // framework gralloc buffers via dma-buf mmap; JPEG stills via libjpeg.
-// Control: persist.l4.camera.pattern (bars|solid|gradient), .fps (cap).
+// Control: persist.l4.camera.pattern (bars|solid|gradient), .fps (cap),
+// .source (HLS/RTSP URL; when a decoded frame is fresh it replaces the
+// synthetic pattern, see stream.cpp).
+#include "stream.h"
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -381,9 +385,25 @@ static void waitFence(const ::aidl::android::hardware::common::NativeHandle& fen
     poll(&p, 1, timeoutMs);
 }
 
+// Row provider: stream frame (nearest-neighbour) when fresh, else pattern.
+static void fillRowRgb(int y, int w, int h, int64_t frame, Pattern mode,
+                       const uint8_t solid[3], const StreamFrame* sf, uint8_t* row) {
+    if (!sf) { renderRgbRow(y, w, h, frame, mode, solid, row); return; }
+    int sy = (int)((int64_t)y * sf->height / h);
+    const uint8_t* src = sf->rgb.data() + (size_t)sy * sf->width * 3;
+    for (int x = 0; x < w; x++) {
+        int sx = (int)((int64_t)x * sf->width / w);
+        row[x * 3 + 0] = src[sx * 3 + 0];
+        row[x * 3 + 1] = src[sx * 3 + 1];
+        row[x * 3 + 2] = src[sx * 3 + 2];
+    }
+}
+
 static bool fillStreamBuffer(const camdev::Stream& stream, int32_t effectiveFormat,
                              ::aidl::android::hardware::common::NativeHandle& handle,
                              int64_t frame, Pattern mode, const uint8_t solid[3]) {
+    auto snap = StreamSource::instance().snapshot();
+    const StreamFrame* sf = snap.get();
     if (handle.fds.empty()) return false;
     int fd = handle.fds[0].get();
     if (fd < 0) return false;
@@ -402,7 +422,7 @@ static bool fillStreamBuffer(const camdev::Stream& stream, int32_t effectiveForm
     if (effectiveFormat == 0x21) {  // BLOB: JPEG + camera_blob footer
         std::vector<uint8_t> rgb((size_t)w * h * 3);
         for (int y = 0; y < h; y++) {
-            renderRgbRow(y, w, h, frame, mode, solid, row.data());
+            fillRowRgb(y, w, h, frame, mode, solid, sf, row.data());
             memcpy(rgb.data() + (size_t)y * w * 3, row.data(), (size_t)w * 3);
         }
         uint8_t* jpg = nullptr; unsigned long jpgSize = 0;
@@ -418,7 +438,7 @@ static bool fillStreamBuffer(const camdev::Stream& stream, int32_t effectiveForm
         uint8_t* uPlane = base + (size_t)w * h;
         uint8_t* vPlane = uPlane + (size_t)(w / 2) * (h / 2);
         for (int y = 0; y < h; y++) {
-            renderRgbRow(y, w, h, frame, mode, solid, row.data());
+            fillRowRgb(y, w, h, frame, mode, solid, sf, row.data());
             for (int x = 0; x < w; x++) {
                 int r = row[x*3], g = row[x*3+1], b = row[x*3+2];
                 yPlane[y * w + x] = rgb2y(r, g, b);
@@ -430,7 +450,7 @@ static bool fillStreamBuffer(const camdev::Stream& stream, int32_t effectiveForm
         }
     } else if (effectiveFormat == 1) {  // RGBA_8888
         for (int y = 0; y < h; y++) {
-            renderRgbRow(y, w, h, frame, mode, solid, row.data());
+            fillRowRgb(y, w, h, frame, mode, solid, sf, row.data());
             uint8_t* dst = base + (size_t)y * w * 4;
             for (int x = 0; x < w; x++) {
                 dst[x*4+0] = row[x*3+0]; dst[x*4+1] = row[x*3+1];
@@ -749,8 +769,13 @@ class CameraProvider : public camprov::BnCameraProvider {
 };
 
 int main() {
+    // The stream source writes to sockets the peer may close first;
+    // a SIGPIPE must never take the provider down (init restarts it,
+    // flapping the camera for the whole system).
+    signal(SIGPIPE, SIG_IGN);
     L4LOG("l4 camera provider starting (pattern=%s)",
           propGet("persist.l4.camera.pattern", "bars").c_str());
+    StreamSource::instance().ensureStarted();
     ABinderProcess_setThreadPoolMaxThreadCount(8);
     ABinderProcess_startThreadPool();
     auto provider = ndk::SharedRefBase::make<CameraProvider>();
