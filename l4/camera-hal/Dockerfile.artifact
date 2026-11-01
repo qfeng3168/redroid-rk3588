@@ -1,0 +1,5 @@
+# Scratch image carrying the L4 camera service payload for the box to pull.
+FROM scratch
+COPY payload/android.hardware.camera.provider-service.redroid-l4 /android.hardware.camera.provider-service.redroid-l4
+COPY payload/android.hardware.camera.provider-service.redroid-l4.rc /android.hardware.camera.provider-service.redroid-l4.rc
+COPY payload/android.hardware.camera.provider.xml /android.hardware.camera.provider.xml

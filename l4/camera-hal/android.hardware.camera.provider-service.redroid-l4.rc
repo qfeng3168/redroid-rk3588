@@ -1,0 +1,6 @@
+# L4-M4 virtual camera: binderized AIDL ICameraProvider service
+# (synthetic frames; persona/pattern via persist.l4.camera.* sysprops).
+service vendor.camera-l4 /vendor/bin/hw/android.hardware.camera.provider-service.redroid-l4
+    class hal
+    user cameraserver
+    group camera system
