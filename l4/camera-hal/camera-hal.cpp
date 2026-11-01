@@ -48,6 +48,9 @@ using ::aidl::android::hardware::camera::device::CameraMetadata;
 using ::ndk::ScopedAStatus;
 
 static const char* kCamId = "0";
+// A13 CameraProviderManager requires HIDL-style device names from
+// getCameraIdList: device@<major>.<minor>/<type>/<id>.
+static const char* kDeviceName = "device@1.1/internal/0";
 static const int32_t kSensorW = 1920;
 static const int32_t kSensorH = 1080;
 static const int32_t kJpegMaxSize = 8388608;
@@ -490,7 +493,7 @@ class CameraSession : public camdev::BnCameraDeviceSession {
             }
             int64_t usage = (int64_t)s.usage | (int64_t)BufferUsage::CPU_WRITE_OFTEN;
             hs.producerUsage = (BufferUsage)usage;
-            hs.consumerUsage = s.usage;
+            hs.consumerUsage = (BufferUsage)0;  // AIDL: OUTPUT streams require 0
             hs.maxBuffers = 4;
             hs.overrideDataSpace = s.dataSpace;
             hs.physicalCameraId = s.physicalCameraId;
@@ -587,6 +590,9 @@ class CameraSession : public camdev::BnCameraDeviceSession {
             }
             camdev::CaptureResult res;
             res.frameNumber = req.frameNumber;
+            res.inputBuffer.streamId = -1;  // AIDL: no input buffer.
+                // Default 0 makes A13 cameraserver process a phantom input
+                // buffer for stream 0 and SIGSEGV in processOneCaptureResult.
             res.partialResult = 1;
             res.result = buildResultMeta(ts, req.frameNumber);
             for (auto& ob : req.outputBuffers) {
@@ -703,7 +709,7 @@ class CameraProvider : public camprov::BnCameraProvider {
     ScopedAStatus setCallback(const std::shared_ptr<camprov::ICameraProviderCallback>& cb) override {
         callback_ = cb;
         if (cb) {
-            auto st = cb->cameraDeviceStatusChange(kCamId, camcommon::CameraDeviceStatus::PRESENT);
+            auto st = cb->cameraDeviceStatusChange(kDeviceName, camcommon::CameraDeviceStatus::PRESENT);
             L4LOG("setCallback: notified PRESENT, ok=%d", (int)st.isOk());
         }
         return ScopedAStatus::ok();
@@ -713,13 +719,13 @@ class CameraProvider : public camprov::BnCameraProvider {
         return ScopedAStatus::ok();
     }
     ScopedAStatus getCameraIdList(std::vector<std::string>* out) override {
-        *out = {kCamId};
+        *out = {kDeviceName};
         return ScopedAStatus::ok();
     }
     ScopedAStatus getCameraDeviceInterface(const std::string& name,
                                            std::shared_ptr<camdev::ICameraDevice>* out) override {
         L4LOG("getCameraDeviceInterface: %s", name.c_str());
-        if (name.find(kCamId) == std::string::npos)
+        if (name != kDeviceName)
             return errStatus(camcommon::Status::ILLEGAL_ARGUMENT);
         if (!device_) device_ = ndk::SharedRefBase::make<CameraDevice>();
         *out = device_;
