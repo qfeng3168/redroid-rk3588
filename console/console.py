@@ -259,6 +259,54 @@ async def handle_client(reader, writer):
         except Exception as e:
             return await reply(500, "application/json",
                                json.dumps({"error": str(e)}))
+    m = re.match(r"^/api/instance/([\w-]+)/sensors$", route)
+    if m and method in ("GET", "POST"):
+        name = m.group(1)
+        insts = {i["name"]: i for i in list_instances()}
+        if name not in insts:
+            return await reply(404, "application/json",
+                               json.dumps({"error": "no such instance"}))
+        if insts[name]["state"] != "running":
+            return await reply(400, "application/json",
+                               json.dumps({"error": "instance not running"}))
+        loop = asyncio.get_event_loop()
+        if method == "POST":
+            try:
+                cfg = json.loads(body or b"{}")
+                mode = cfg.get("mode", "sine")
+                if mode not in ("sine", "static"):
+                    raise ValueError("mode must be sine|static")
+                def vec(key):
+                    v = cfg.get(key)
+                    if not isinstance(v, list) or len(v) != 3:
+                        raise ValueError(key + " must be [x,y,z]")
+                    out = []
+                    for x in v:
+                        f = float(x)
+                        if abs(f) > 100:
+                            raise ValueError(key + " out of range")
+                        out.append(f)
+                    return ",".join(f"{f:g}" for f in out)
+                sets = [("persist.l4.sensors.mode", mode),
+                        ("persist.l4.sensors.accel", vec("accel")),
+                        ("persist.l4.sensors.gyro", vec("gyro"))]
+            except Exception as e:
+                return await reply(400, "application/json",
+                                   json.dumps({"error": str(e)}))
+            def apply():
+                for k, v in sets:
+                    sh(["docker", "exec", name, "setprop", k, v], 10)
+            await loop.run_in_executor(None, apply)
+        def readback():
+            vals = {}
+            for key, prop in (("mode", "persist.l4.sensors.mode"),
+                              ("accel", "persist.l4.sensors.accel"),
+                              ("gyro", "persist.l4.sensors.gyro")):
+                r = sh(["docker", "exec", name, "getprop", prop], 10)
+                vals[key] = r.stdout.strip()
+            return vals
+        vals = await loop.run_in_executor(None, readback)
+        return await reply(200, "application/json", json.dumps(vals))
     m = re.match(r"^/ws/([\w-]+)$", route)
     if m and headers.get("upgrade", "").lower() == "websocket":
         return await handle_ws(reader, writer, m.group(1), headers)

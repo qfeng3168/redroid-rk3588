@@ -44,6 +44,28 @@
   </div>
   <div id="stage"><video id="v" autoplay muted playsinline></video></div>
   <div id="msg">从左侧选择一个实例开始投屏</div>
+  <div id="sensorPanel" style="display:none; margin-top:10px; background:#1c1f24; border-radius:8px; padding:12px 14px; width:100%; max-width:760px; box-sizing:border-box;">
+    <div style="font-weight:600; margin-bottom:8px;">传感器配置 <span id="sensorInst" style="color:#9aa3ad; font-weight:400;"></span></div>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+      <label>模式
+        <select id="sMode" style="background:#262a31; color:#e8e8e8; border:1px solid #3a4048; border-radius:6px; padding:4px;">
+          <option value="sine">动态（正弦摆动）</option>
+          <option value="static">静态（固定值）</option>
+        </select>
+      </label>
+      <button id="sPresetFlat">预设：平放静止</button>
+      <button id="sLoad">读取当前</button>
+      <button id="sApply" style="background:#2b5ea7;">应用</button>
+      <span id="sMsg" style="font-size:12px; color:#9aa3ad;"></span>
+    </div>
+    <div style="display:grid; grid-template-columns:auto repeat(3, 90px); gap:6px; align-items:center; font-size:13px;">
+      <span>加速度 m/s²</span>
+      <input id="saX" type="number" step="0.1"><input id="saY" type="number" step="0.1"><input id="saZ" type="number" step="0.1">
+      <span>陀螺 rad/s</span>
+      <input id="sgX" type="number" step="0.05"><input id="sgY" type="number" step="0.05"><input id="sgZ" type="number" step="0.05">
+    </div>
+    <div style="font-size:12px; color:#9aa3ad; margin-top:6px;">静态模式下生效，即时下发（HAL 逐帧读取），无需重启。</div>
+  </div>
 </div>
 <script src="jmuxer.min.js"></script>
 <script>
@@ -132,6 +154,51 @@ $('#txt').addEventListener('keydown', e => {
   if (e.key === 'Enter') { send({t:'text', text: e.target.value}); e.target.value = ''; }
 });
 $('#refresh').onclick = loadList;
+
+// ---- sensor config panel ----
+function parseVec(s, dflt) {
+  const p = String(s || '').split(',').map(Number);
+  return (p.length === 3 && p.every(isFinite)) ? p : dflt;
+}
+async function sensorLoad() {
+  if (!cur) return;
+  const r = await fetch(`api/instance/${cur}/sensors`);
+  const j = await r.json();
+  if (j.error) { $('#sMsg').textContent = j.error; return; }
+  $('#sMode').value = j.mode || 'sine';
+  const a = parseVec(j.accel, [0, 0, 9.81]), g = parseVec(j.gyro, [0, 0, 0]);
+  $('#saX').value = a[0]; $('#saY').value = a[1]; $('#saZ').value = a[2];
+  $('#sgX').value = g[0]; $('#sgY').value = g[1]; $('#sgZ').value = g[2];
+  $('#sMsg').textContent = '已读取';
+}
+$('#sLoad').onclick = sensorLoad;
+$('#sPresetFlat').onclick = () => {
+  $('#sMode').value = 'static';
+  $('#saX').value = 0; $('#saY').value = 0; $('#saZ').value = 9.81;
+  $('#sgX').value = 0; $('#sgY').value = 0; $('#sgZ').value = 0;
+};
+$('#sApply').onclick = async () => {
+  if (!cur) return;
+  const body = {
+    mode: $('#sMode').value,
+    accel: [$('#saX').value, $('#saY').value, $('#saZ').value].map(Number),
+    gyro: [$('#sgX').value, $('#sgY').value, $('#sgZ').value].map(Number),
+  };
+  const r = await fetch(`api/instance/${cur}/sensors`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)});
+  const j = await r.json();
+  $('#sMsg').textContent = j.error ? ('失败：' + j.error)
+    : `已应用：${j.mode} accel=${j.accel} gyro=${j.gyro}`;
+};
+const _origSelect = select;
+select = function(it) {
+  _origSelect(it);
+  $('#sensorPanel').style.display = 'block';
+  $('#sensorInst').textContent = '· ' + it.name;
+  sensorLoad();
+};
+
 loadList();
 </script>
 </body>
