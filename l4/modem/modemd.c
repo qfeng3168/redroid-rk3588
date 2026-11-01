@@ -15,6 +15,9 @@
 //   persist.l4.modem.op_short(default "CMCC")
 //   persist.l4.modem.op_num (default "46000")
 //   persist.l4.modem.rssi    (default 21, AT+CSQ scale 0..31)
+//   persist.l4.modem.profile sim (default) | esim — in esim mode the SIM
+//                            identity fields above are overridden by
+//                            persist.l4.esim.{imsi,iccid,msisdn,op_*}.
 //
 // Scope: identity + registration + signal. Voice calls and data calls
 // intentionally fail (ERROR) in this milestone.
@@ -61,13 +64,35 @@ static int P_RSSI;
 
 static void load_props(void) {
     char rssi[128];
+    char profile[128];
+    // SIM profile switch: persist.l4.modem.profile = sim (default) | esim.
+    // In esim mode the SIM identity fields come from persist.l4.esim.*,
+    // each falling back to the physical-SIM value when unset. The IMEI is
+    // a device property and stays under persist.l4.modem.imei either way.
+    prop_get("persist.l4.modem.profile", profile, "sim");
     prop_get("persist.l4.modem.imei", P_IMEI, "353328051234563");
-    prop_get("persist.l4.modem.imsi", P_IMSI, "460001234567890");
-    prop_get("persist.l4.modem.iccid", P_ICCID, "89860012345678901234");
-    prop_get("persist.l4.modem.msisdn", P_MSISDN, "8613800138000");
-    prop_get("persist.l4.modem.op_long", P_OPL, "China Mobile");
-    prop_get("persist.l4.modem.op_short", P_OPS, "CMCC");
-    prop_get("persist.l4.modem.op_num", P_OPN, "46000");
+    if (strcmp(profile, "esim") == 0) {
+        char b[128];
+        prop_get("persist.l4.modem.imsi", b, "460001234567890");
+        prop_get("persist.l4.esim.imsi", P_IMSI, b);
+        prop_get("persist.l4.modem.iccid", b, "89860012345678901234");
+        prop_get("persist.l4.esim.iccid", P_ICCID, b);
+        prop_get("persist.l4.modem.msisdn", b, "8613800138000");
+        prop_get("persist.l4.esim.msisdn", P_MSISDN, b);
+        prop_get("persist.l4.modem.op_long", b, "China Mobile");
+        prop_get("persist.l4.esim.op_long", P_OPL, b);
+        prop_get("persist.l4.modem.op_short", b, "CMCC");
+        prop_get("persist.l4.esim.op_short", P_OPS, b);
+        prop_get("persist.l4.modem.op_num", b, "46000");
+        prop_get("persist.l4.esim.op_num", P_OPN, b);
+    } else {
+        prop_get("persist.l4.modem.imsi", P_IMSI, "460001234567890");
+        prop_get("persist.l4.modem.iccid", P_ICCID, "89860012345678901234");
+        prop_get("persist.l4.modem.msisdn", P_MSISDN, "8613800138000");
+        prop_get("persist.l4.modem.op_long", P_OPL, "China Mobile");
+        prop_get("persist.l4.modem.op_short", P_OPS, "CMCC");
+        prop_get("persist.l4.modem.op_num", P_OPN, "46000");
+    }
     prop_get("persist.l4.modem.rssi", rssi, "21");
     P_RSSI = atoi(rssi);
     if (P_RSSI < 0 || P_RSSI > 31) P_RSSI = 21;
