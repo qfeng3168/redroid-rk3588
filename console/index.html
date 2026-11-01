@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L4 云手机控制台</title>
+<style>
+  body { margin:0; font-family: system-ui, sans-serif; background:#14161a; color:#e8e8e8; display:flex; height:100vh; }
+  #side { width:250px; background:#1c1f24; padding:14px; box-sizing:border-box; overflow-y:auto; flex:none; }
+  #side h1 { font-size:16px; margin:0 0 12px; }
+  .inst { padding:9px 10px; border-radius:8px; margin-bottom:8px; background:#262a31; cursor:pointer; }
+  .inst.sel { outline:2px solid #4da3ff; }
+  .inst .nm { font-weight:600; }
+  .inst .st { font-size:12px; color:#9aa3ad; margin-top:2px; }
+  .inst .acts { margin-top:6px; display:flex; gap:6px; }
+  button { background:#333a44; color:#e8e8e8; border:0; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:12px; }
+  button:hover { background:#3f4854; }
+  button:disabled { opacity:.4; cursor:default; }
+  #main { flex:1; display:flex; flex-direction:column; align-items:center; padding:14px; box-sizing:border-box; min-width:0; }
+  #bar { display:flex; gap:8px; margin-bottom:10px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  #bar input { background:#262a31; border:1px solid #3a4048; color:#e8e8e8; border-radius:6px; padding:5px 8px; width:220px; }
+  #stage { flex:1; display:flex; align-items:center; justify-content:center; width:100%; min-height:0; }
+  video { max-width:100%; max-height:100%; background:#000; border-radius:8px; touch-action:none; }
+  #msg { font-size:12px; color:#9aa3ad; min-height:16px; margin-top:8px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:1px; }
+  .run { background:#39c26d; } .stop { background:#666; }
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>云手机实例</h1>
+  <div id="list"></div>
+  <button id="refresh">刷新列表</button>
+</div>
+<div id="main">
+  <div id="bar">
+    <button data-key="4">返回</button>
+    <button data-key="3">Home</button>
+    <button data-key="187">多任务</button>
+    <button data-key="26">电源</button>
+    <button data-key="24">音量+</button>
+    <button data-key="25">音量−</button>
+    <input id="txt" placeholder="输入文字后回车发送">
+  </div>
+  <div id="stage"><video id="v" autoplay muted playsinline></video></div>
+  <div id="msg">从左侧选择一个实例开始投屏</div>
+</div>
+<script src="jmuxer.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+let cur = null, ws = null, muxer = null, devW = 1920, devH = 1080;
+const p1 = {x:0, y:0, t:0};
+
+async function loadList() {
+  const r = await fetch('api/instances');
+  const list = await r.json();
+  const el = $('#list');
+  el.innerHTML = '';
+  for (const it of list) {
+    const d = document.createElement('div');
+    d.className = 'inst' + (cur === it.name ? ' sel' : '');
+    const running = it.state === 'running';
+    d.innerHTML = `<div class="nm"><span class="dot ${running ? 'run' : 'stop'}"></span>${it.name}</div>
+      <div class="st">${it.state} · adb :${it.adb}${it.managed ? '' : ' · 存量(只读)'}</div>`;
+    const acts = document.createElement('div');
+    acts.className = 'acts';
+    for (const a of ['start', 'stop', 'restart']) {
+      const b = document.createElement('button');
+      b.textContent = {start:'启动', stop:'停止', restart:'重启'}[a];
+      b.disabled = !it.managed;
+      b.onclick = async (ev) => {
+        ev.stopPropagation();
+        b.disabled = true; b.textContent = '执行中…';
+        const rr = await fetch(`api/instance/${it.name}/${a}`, {method: 'POST'});
+        const j = await rr.json();
+        $('#msg').textContent = `${it.name} ${a} rc=${j.rc ?? j.error}`;
+        b.disabled = false; b.textContent = {start:'启动', stop:'停止', restart:'重启'}[a];
+        loadList();
+      };
+      acts.appendChild(b);
+    }
+    d.appendChild(acts);
+    d.onclick = () => select(it);
+    el.appendChild(d);
+  }
+}
+
+function newMuxer() {
+  if (muxer) { try { muxer.destroy(); } catch(e) {} }
+  muxer = new JMuxer({ node: 'v', mode: 'video', flushingTime: 0, debug: false });
+}
+function select(it) {
+  cur = it.name;
+  document.querySelectorAll('.inst').forEach(e => e.classList.remove('sel'));
+  if (ws) { ws.close(); ws = null; }
+  $('#msg').textContent = '连接 ' + it.name + ' …';
+  newMuxer();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/${it.name}`);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { $('#msg').textContent = it.name + ' 投屏中（点按/滑动直接操作）'; };
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === 'string') {
+      const m = JSON.parse(ev.data);
+      if (m.t === 'restart') { newMuxer(); $('#msg').textContent = it.name + ' 流重连…'; }
+      if (m.t === 'error') { $('#msg').textContent = it.name + ' 出错：' + m.msg; }
+    } else if (muxer) {
+      muxer.feed({ video: new Uint8Array(ev.data) });
+    }
+  };
+  ws.onclose = () => { $('#msg').textContent = it.name + ' 已断开'; };
+  loadList();
+}
+
+function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+function toDev(e) {
+  const r = $('#v').getBoundingClientRect();
+  return { x: Math.round((e.clientX - r.left) / r.width * devW),
+           y: Math.round((e.clientY - r.top) / r.height * devH) };
+}
+const v = $('#v');
+v.addEventListener('pointerdown', e => { const p = toDev(e); p1.x = p.x; p1.y = p.y; p1.t = Date.now(); });
+v.addEventListener('pointerup', e => {
+  const p = toDev(e);
+  const dx = p.x - p1.x, dy = p.y - p1.y, dt = Date.now() - p1.t;
+  if (Math.hypot(dx, dy) < 12) send({t:'tap', x:p.x, y:p.y});
+  else send({t:'swipe', x1:p1.x, y1:p1.y, x2:p.x, y2:p.y, ms: Math.max(80, Math.min(dt, 800))});
+});
+document.querySelectorAll('[data-key]').forEach(b =>
+  b.onclick = () => send({t:'key', code: parseInt(b.dataset.key)}));
+$('#txt').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { send({t:'text', text: e.target.value}); e.target.value = ''; }
+});
+$('#refresh').onclick = loadList;
+loadList();
+</script>
+</body>
+</html>
