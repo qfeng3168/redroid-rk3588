@@ -158,7 +158,7 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 def ws_accept_key(key):
     import base64, hashlib
     return base64.b64encode(
-        hashlib.sha1((key + WS_GUID).encode()).digest()).decode
+        hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
 
 
 async def ws_send(writer, data, opcode=0x2):
