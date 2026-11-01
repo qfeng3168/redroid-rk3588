@@ -1,0 +1,3 @@
+# Scratch image carrying the L4-M5 virtual audio HAL payload for the box.
+FROM scratch
+COPY payload/audio.primary.redroid.so /audio.primary.redroid.so
