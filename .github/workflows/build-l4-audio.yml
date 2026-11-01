@@ -53,7 +53,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: <redacted>
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push payload image
         uses: docker/build-push-action@v6
