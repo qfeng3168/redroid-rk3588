@@ -15,6 +15,119 @@ import sys
 import time
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+
+# L4 virtual-device control plane: module -> ordered persist prop keys
+# (persist.l4.<module>.<key>). Values mirror each HAL's documented props.
+L4_MODULES = {
+    "sensors": ["mode", "accel", "gyro"],
+    "gnss": ["mode", "lat", "lon", "alt", "acc"],
+    "camera": ["pattern", "fps", "source"],
+    "mic": ["mode", "freq", "gain", "wav"],
+    "modem": ["profile", "imei", "imsi", "iccid", "msisdn",
+              "op_long", "op_short", "op_num", "rssi"],
+    "esim": ["imsi", "iccid", "msisdn", "op_long", "op_short", "op_num"],
+}
+
+
+def _f(v, lo, hi, key):
+    f = float(v)
+    if not (lo <= f <= hi):
+        raise ValueError(f"{key} out of range {lo}..{hi}")
+    return f"{f:g}"
+
+
+def _i(v, lo, hi, key):
+    f = int(v)
+    if not (lo <= f <= hi):
+        raise ValueError(f"{key} out of range {lo}..{hi}")
+    return str(f)
+
+
+def _digits(v, lo, hi, key):
+    s = str(v)
+    if not s.isdigit() or not (lo <= len(s) <= hi):
+        raise ValueError(f"{key} must be {lo}-{hi} digits")
+    return s
+
+
+def _text(v, maxlen, key):
+    s = str(v)
+    if len(s) > maxlen or any(c in s for c in "\r\n"):
+        raise ValueError(f"{key} too long or invalid")
+    return s
+
+
+def validate_l4(module, key, v):
+    """Return the string to setprop for one L4 field, or raise ValueError."""
+    if module == "sensors":
+        if key == "mode":
+            if v not in ("sine", "static"):
+                raise ValueError("sensors.mode must be sine|static")
+            return v
+        # accel / gyro: [x, y, z] numbers
+        if not isinstance(v, list) or len(v) != 3:
+            raise ValueError(f"sensors.{key} must be [x,y,z]")
+        return ",".join(_f(x, -100, 100, key) for x in v)
+    if module == "gnss":
+        if key == "mode":
+            if v not in ("static", "drift"):
+                raise ValueError("gnss.mode must be static|drift")
+            return v
+        if key == "lat":
+            return _f(v, -90, 90, key)
+        if key == "lon":
+            return _f(v, -180, 180, key)
+        if key == "alt":
+            return _f(v, -500, 10000, key)
+        return _f(v, 0, 1000, key)  # acc
+    if module == "camera":
+        if key == "pattern":
+            if v not in ("bars", "solid", "gradient"):
+                raise ValueError("camera.pattern must be bars|solid|gradient")
+            return v
+        if key == "fps":
+            return _i(v, 1, 60, key)
+        s = _text(v, 300, key)  # source
+        if s and not s.startswith(("http://", "https://", "rtsp://")):
+            raise ValueError("camera.source must be an http(s)/rtsp URL or empty")
+        return s
+    if module == "mic":
+        if key == "mode":
+            if v not in ("sine", "silence", "wav"):
+                raise ValueError("mic.mode must be sine|silence|wav")
+            return v
+        if key == "freq":
+            return _i(v, 20, 20000, key)
+        if key == "gain":
+            return _f(v, 0, 1, key)
+        return _text(v, 200, key)  # wav path
+    if module == "esim":
+        if key in ("op_long", "op_short"):
+            return _text(v, 32, key)
+        if key == "op_num":
+            return _digits(v, 5, 6, key)
+        if key in ("imsi",):
+            return _digits(v, 14, 16, key)
+        if key == "iccid":
+            return _digits(v, 18, 20, key)
+        return _digits(v, 5, 15, key)  # msisdn
+    if module == "modem":
+        if key == "profile":
+            if v not in ("sim", "esim"):
+                raise ValueError("modem.profile must be sim|esim")
+            return v
+        if key in ("op_long", "op_short"):
+            return _text(v, 32, key)
+        if key == "rssi":
+            return _i(v, 0, 31, key)
+        if key == "op_num":
+            return _digits(v, 5, 6, key)
+        if key in ("imei", "imsi"):
+            return _digits(v, 14, 16, key)
+        if key == "iccid":
+            return _digits(v, 18, 20, key)
+        return _digits(v, 5, 15, key)  # msisdn
+    raise ValueError("unknown field")
 ADB = os.environ.get("CONSOLE_ADB", "/srv/console/adb")
 MGR = os.environ.get("CONSOLE_MGR", "/vol1/redroid-inst/mgr.sh")
 INST_DIR = os.environ.get("CONSOLE_INST_DIR", "/vol1/redroid-inst")
@@ -259,9 +372,9 @@ async def handle_client(reader, writer):
         except Exception as e:
             return await reply(500, "application/json",
                                json.dumps({"error": str(e)}))
-    m = re.match(r"^/api/instance/([\w-]+)/sensors$", route)
+    m = re.match(r"^/api/instance/([\w-]+)/l4(?:/(\w+))?$", route)
     if m and method in ("GET", "POST"):
-        name = m.group(1)
+        name, module = m.group(1), m.group(2)
         insts = {i["name"]: i for i in list_instances()}
         if name not in insts:
             return await reply(404, "application/json",
@@ -270,42 +383,45 @@ async def handle_client(reader, writer):
             return await reply(400, "application/json",
                                json.dumps({"error": "instance not running"}))
         loop = asyncio.get_event_loop()
-        if method == "POST":
-            try:
-                cfg = json.loads(body or b"{}")
-                mode = cfg.get("mode", "sine")
-                if mode not in ("sine", "static"):
-                    raise ValueError("mode must be sine|static")
-                def vec(key):
-                    v = cfg.get(key)
-                    if not isinstance(v, list) or len(v) != 3:
-                        raise ValueError(key + " must be [x,y,z]")
-                    out = []
-                    for x in v:
-                        f = float(x)
-                        if abs(f) > 100:
-                            raise ValueError(key + " out of range")
-                        out.append(f)
-                    return ",".join(f"{f:g}" for f in out)
-                sets = [("persist.l4.sensors.mode", mode),
-                        ("persist.l4.sensors.accel", vec("accel")),
-                        ("persist.l4.sensors.gyro", vec("gyro"))]
-            except Exception as e:
-                return await reply(400, "application/json",
-                                   json.dumps({"error": str(e)}))
-            def apply():
-                for k, v in sets:
-                    sh(["docker", "exec", name, "setprop", k, v], 10)
-            await loop.run_in_executor(None, apply)
-        def readback():
+
+        def read_module(mod):
             vals = {}
-            for key, prop in (("mode", "persist.l4.sensors.mode"),
-                              ("accel", "persist.l4.sensors.accel"),
-                              ("gyro", "persist.l4.sensors.gyro")):
-                r = sh(["docker", "exec", name, "getprop", prop], 10)
+            for key in L4_MODULES[mod]:
+                r = sh(["docker", "exec", name, "getprop",
+                        f"persist.l4.{mod}.{key}"], 10)
                 vals[key] = r.stdout.strip()
             return vals
-        vals = await loop.run_in_executor(None, readback)
+
+        if method == "GET":
+            if module:
+                if module not in L4_MODULES:
+                    return await reply(404, "application/json",
+                                       json.dumps({"error": "no such module"}))
+                vals = await loop.run_in_executor(None, read_module, module)
+                return await reply(200, "application/json", json.dumps(vals))
+            def read_all():
+                return {mod: read_module(mod) for mod in L4_MODULES}
+            vals = await loop.run_in_executor(None, read_all)
+            return await reply(200, "application/json", json.dumps(vals))
+        # POST /l4/<module>
+        if module not in L4_MODULES:
+            return await reply(404, "application/json",
+                               json.dumps({"error": "no such module"}))
+        try:
+            cfg = json.loads(body or b"{}")
+            sets = [(f"persist.l4.{module}.{key}",
+                     validate_l4(module, key, cfg.get(key)))
+                    for key in L4_MODULES[module] if key in cfg]
+            if not sets:
+                raise ValueError("no fields")
+        except Exception as e:
+            return await reply(400, "application/json",
+                               json.dumps({"error": str(e)}))
+        def apply():
+            for k, v in sets:
+                sh(["docker", "exec", name, "setprop", k, v], 10)
+        await loop.run_in_executor(None, apply)
+        vals = await loop.run_in_executor(None, read_module, module)
         return await reply(200, "application/json", json.dumps(vals))
     m = re.match(r"^/ws/([\w-]+)$", route)
     if m and headers.get("upgrade", "").lower() == "websocket":
