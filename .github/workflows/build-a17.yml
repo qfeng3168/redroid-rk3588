@@ -1,0 +1,40 @@
+name: build-a17
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "sync | build | sync+build"
+        default: "sync"
+        type: choice
+        options: [sync, build, sync+build]
+jobs:
+  a17:
+    runs-on: [self-hosted, g98]
+    timeout-minutes: 720
+    steps:
+      - name: sync AOSP 17 tree
+        if: ${{ inputs.stage == 'sync' || inputs.stage == 'sync+build' }}
+        run: |
+          docker run --rm --name a17-sync --cpus=6 --memory=10g \
+            -v /vol2/aosp17:/aosp a17-env:latest bash -c '
+              set -e
+              cd /aosp/src
+              if [ ! -d .repo ]; then
+                repo init -u https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/manifest \
+                  -b android-17.0.0_r1 --depth=1 --no-clone-bundle
+              fi
+              repo sync -c -j6 --no-clone-bundle --no-tags --prune
+              du -sh /aosp/src
+            '
+      - name: build redroid_rk3588_arm64
+        if: ${{ inputs.stage == 'build' || inputs.stage == 'sync+build' }}
+        run: |
+          docker run --rm --name a17-build --cpus=8 --memory=14g \
+            -v /vol2/aosp17:/aosp a17-env:latest bash -c '
+              set -e
+              cd /aosp/src
+              source build/envsetup.sh
+              lunch redroid_rk3588_arm64-userdebug
+              m -j8 systemimage vendorimage
+              ls -la out/target/product/redroid_arm64_only/*.img
+            '
