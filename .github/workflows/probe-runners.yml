@@ -1,0 +1,18 @@
+name: probe-runners
+on:
+  workflow_dispatch:
+jobs:
+  x86:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: specs
+        run: |
+          echo "ARCH $(uname -m)"; nproc; free -g | head -2; df -h / | tail -1
+          grep -m1 'model name' /proc/cpuinfo || true
+  arm:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: specs
+        run: |
+          echo "ARCH $(uname -m)"; nproc; free -g | head -2; df -h / | tail -1
+          grep -m1 'model name' /proc/cpuinfo || true
