@@ -7,12 +7,12 @@ jobs:
     steps:
       - name: specs
         run: |
-          echo "ARCH $(uname -m)"; nproc; free -g | head -2; df -h / | tail -1
-          grep -m1 'model name' /proc/cpuinfo || true
+          S="arch=$(uname -m) cpu=$(nproc) mem=$(free -g | awk '/Mem:/{print $2}')G disk=$(df -BG / | awk 'NR==2{print $4}') model=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+          echo "::notice::SPECS $S"
   arm:
     runs-on: ubuntu-24.04-arm
     steps:
       - name: specs
         run: |
-          echo "ARCH $(uname -m)"; nproc; free -g | head -2; df -h / | tail -1
-          grep -m1 'model name' /proc/cpuinfo || true
+          S="arch=$(uname -m) cpu=$(nproc) mem=$(free -g | awk '/Mem:/{print $2}')G disk=$(df -BG / | awk 'NR==2{print $4}') model=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+          echo "::notice::SPECS $S"
